@@ -15,6 +15,8 @@ class SixGraySimData(Dataset):
         self.frames,self.height,self.width = self.mask.shape
 
     def __getitem__(self,index):
+        # Note how we're not accessing the meas or mask attributes here.
+        # Instead we form the meas using the given mask from kwargs.
         pic = scio.loadmat(osp.join(self.data_root,self.data_name_list[index]))
         if "orig" in pic:
             pic = pic['orig']
@@ -27,8 +29,13 @@ class SixGraySimData(Dataset):
         elif "p3" in pic:
             pic = pic['p3']
         pic = pic / 255
+        # 256 x 256 x 32
         pic = pic[0:self.height,0:self.width,:]
+        # e.g. 2 x 16 x 256 x 256
+        assert pic.shape[2] // self.frames > 0
         pic_gt = np.zeros([pic.shape[2] // self.frames, self.frames, self.height, self.width])
+        # print(f"Pic shape: {pic.shape}")
+        # print(f"Pic_gt shape: {pic_gt.shape}")
         for jj in range(pic.shape[2]):
             if jj % self.frames == 0:
                 meas_t = np.zeros([self.height, self.width])
@@ -41,6 +48,7 @@ class SixGraySimData(Dataset):
             meas_t = meas_t + np.multiply(mask_t, pic_t)
 
             if jj == (self.frames-1):
+                # First time.
                 meas_t = np.expand_dims(meas_t, 0)
                 meas = meas_t
             elif (jj + 1) % self.frames == 0 and jj != (self.frames-1):

@@ -8,5 +8,5 @@ h5py
 addict
 timm
 tensorboard
-moviepy
+# moviepy
 einops 

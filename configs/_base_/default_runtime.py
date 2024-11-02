@@ -1,10 +1,10 @@
-checkpoint_config = dict(interval=1)
+checkpoint_config = dict(interval=10)
 
 log_config = dict(
-    interval=50,
+    interval=500,
 )
 save_image_config = dict(
-    interval=200,
+    interval=2000,
 )
 optimizer = dict(type='Adam', lr=0.0001)
 

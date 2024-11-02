@@ -18,12 +18,12 @@ train_pipeline = [
     dict(type='Resize', resize_h=resize_h,resize_w=resize_w),
 ]
 train_data = dict(
-    mask_path = None,
+    mask_path = "test_datasets/mask/2x2_mask.mat",
     mask_shape = (resize_h,resize_w,8),
     pipeline = train_pipeline
 )
 test_data = dict(
-    mask_path="test_datasets/mask/random_mask.mat"
+    mask_path="test_datasets/mask/2x2_mask.mat"
 )
 
 model = dict(
@@ -38,4 +38,4 @@ eval=dict(
     interval=1
 )
 
-checkpoints="checkpoints/stformer_base.pth"
+# checkpoints="checkpoints/stformer_base.pth"

@@ -11,8 +11,8 @@ gene_meas = dict(type='GenerationGrayMeas')
 
 train_data = dict(
     type="DavisData",
-    data_root="/home/wanglishun/datasets/DAVIS/DAVIS-480/JPEGImages/480p",
-    mask_path="test_datasets/mask/random_mask.mat",
+    data_root="/scratch/ondemand28/dsaragih/datasets/DAVIS/JPEGImages/480p",
+    mask_path="test_datasets/mask/2x2_mask.mat",
     pipeline=train_pipeline,
     gene_meas = gene_meas,
     mask_shape = None

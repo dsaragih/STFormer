@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from cacti.utils.mask import generate_masks
 from cacti.utils.utils import save_single_image,get_device_info,load_checkpoints
-from cacti.utils.metrics import compare_psnr,compare_ssim
+from cacti.utils.metrics import compare_psnr,compare_ssim,compare_lpips
 from cacti.utils.config import Config
 from cacti.models.builder import build_model
 from cacti.datasets.builder import build_dataset 
@@ -17,6 +17,7 @@ import numpy as np
 import argparse 
 import time
 import einops 
+from lpips import LPIPS
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -56,6 +57,7 @@ def main():
             + dash_line + 
             env_info + '\n' +
             dash_line) 
+    logger.info(f"Config:\n{cfg.test_data}\n")
     test_data = build_dataset(cfg.test_data,{"mask":mask})
     data_loader = DataLoader(test_data,batch_size=1,shuffle=False)
 
@@ -73,7 +75,11 @@ def main():
     Phi = torch.from_numpy(Phi).to(args.device)
     Phi_s = torch.from_numpy(Phi_s).to(args.device)
 
+    logger.info(f"Phi shape: {Phi.shape}")
+    logger.info(f"Phi_s shape: {Phi_s.shape}")
+
     if "partition" in cfg.test_data.keys():
+        logger.info("Chunking image...")
         partition = cfg.test_data.partition
         _,_,Phi_h,Phi_w = Phi.shape
         part_h = partition.height
@@ -84,18 +90,19 @@ def main():
         A_Phi = einops.rearrange(Phi,"b cr (h_num h) (w_num w)->(b h_num w_num) cr h w",h=part_h,w=part_w)
         A_Phi_s = einops.rearrange(Phi_s,"b cr (h_num h) (w_num w)->(b h_num w_num) cr h w",h=part_h,w=part_w)
         
-    psnr_dict,ssim_dict = {},{}
-    psnr_list,ssim_list = [],[]
+    psnr_dict,ssim_dict,lpips_dict = {},{},{}
+    psnr_list,ssim_list,lpips_list = [],[],[]
     sum_time=0.0
     time_count = 0
-    
+    lpips_fn = LPIPS(net='vgg').to(device)
     for data_iter,data in enumerate(data_loader):
-        psnr,ssim = 0,0
+        psnr,ssim,lpips = 0.0,0.0,0.0
         batch_output = []
         meas, gt = data
+        # Index batch dimension
         gt = gt[0].numpy()
         meas = meas[0].float().to(device)
-        batch_size = meas.shape[0]
+        batch_size = meas.shape[0] # frames / subframes
         name = test_data.data_name_list[data_iter]
         if "_" in name:
             _name,_ = name.split("_")
@@ -149,19 +156,22 @@ def main():
                     per_frame_out = np.sum(per_frame_out*rgb2raw,axis=0)
                 else:
                     per_frame_out = output[jj]
-                per_frame_gt = single_gt[jj]
+                per_frame_gt = single_gt[jj].astype(np.float32)
                 psnr += compare_psnr(per_frame_gt*255,per_frame_out*255)
                 ssim += compare_ssim(per_frame_gt*255,per_frame_out*255)
+                lpips += compare_lpips(per_frame_gt*255,per_frame_out*255,lpips_fn, device)
         meas_num = len(batch_output)
         psnr = psnr / (meas_num* cr)
         ssim = ssim / (meas_num* cr)
-        logger.info("{}, Mean PSNR: {:.4f} Mean SSIM: {:.4f}.".format(
-                    _name,psnr,ssim))
+        lpips = lpips / (meas_num* cr)
+        logger.info("{}, Mean PSNR: {:.4f} Mean SSIM: {:.4f} Mean LPIPS: {:.4f}.".format(_name,psnr,ssim,lpips))
         psnr_list.append(psnr)
         ssim_list.append(ssim)
+        lpips_list.append(lpips)
 
         psnr_dict[_name] = psnr
         ssim_dict[_name] = ssim
+        lpips_dict[_name] = lpips
 
         #save image
         out = np.array(batch_output)
@@ -179,9 +189,11 @@ def main():
     
     psnr_dict["psnr_mean"] = np.mean(psnr_list)
     ssim_dict["ssim_mean"] = np.mean(ssim_list)
+    lpips_dict["lpips_mean"] = np.mean(lpips_list)
     
     psnr_str = ", ".join([key+": "+"{:.4f}".format(psnr_dict[key]) for key in psnr_dict.keys()])
     ssim_str = ", ".join([key+": "+"{:.4f}".format(ssim_dict[key]) for key in ssim_dict.keys()])
+    lpips_str = ", ".join([key+": "+"{:.4f}".format(lpips_dict[key]) for key in lpips_dict.keys()])
     logger.info("Mean PSNR: \n"+
                 dash_line + 
                 "{}.\n".format(psnr_str)+
@@ -191,6 +203,10 @@ def main():
                 dash_line + 
                 "{}.\n".format(ssim_str)+
                 dash_line) 
+    logger.info("Mean LPIPS: \n"+
+                dash_line + 
+                "{}.\n".format(lpips_str)+
+                dash_line)
 
 if __name__=="__main__":
     main()
