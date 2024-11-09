@@ -1,4 +1,4 @@
-checkpoint_config = dict(interval=10)
+checkpoint_config = dict(interval=1)
 
 log_config = dict(
     interval=500,
@@ -10,7 +10,7 @@ optimizer = dict(type='Adam', lr=0.0001)
 
 loss = dict(type='MSELoss')
 
-runner = dict(max_epochs=120)
+runner = dict(max_epochs=100)
 
 checkpoints=None
 resume=None

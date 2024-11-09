@@ -37,7 +37,8 @@ def main():
     device = args.device
     config_name = osp.splitext(osp.basename(args.config))[0]
     if args.work_dir is None:
-        args.work_dir = osp.join('./work_dirs',config_name)
+        model_name = args.weights.split("/")[-1].split(".")[0]
+        args.work_dir = osp.join('./work_dirs', model_name)
     mask,mask_s = generate_masks(cfg.test_data.mask_path,cfg.test_data.mask_shape)
     cr = mask.shape[0]
     if args.weights is None:
@@ -63,6 +64,7 @@ def main():
 
     model = build_model(cfg.model).to(device)
     logger.info("Load pre_train model...")
+    logger.info(f"Load model from {args.weights}")
     resume_dict = torch.load(args.weights)
     if "model_state_dict" not in resume_dict.keys():
         model_state_dict = resume_dict

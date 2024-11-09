@@ -1,2 +1,4 @@
-srun --partition=gpunodes --mem=8G --gres=gpu:rtx_a6000 \
-    python tools/test.py configs/STFormer/stformer_base.py --weights=checkpoints/stformer_base.pth
+#!/bin/bash
+
+srun --partition=gpunodes --mem=8G --nodelist=peleus --gres=gpu:nvidia_titan_rtx \
+    python tools/test.py configs/STFormer/stformer_base.py --weights=train_dir/checkpoints/epoch_7.pth

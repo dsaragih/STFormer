@@ -47,7 +47,7 @@ class RandomRotation:
             h,w = img_dim
 
         center = ((w - 1) * 0.5, (h - 1) * 0.5)
-        matrix = cv2.getRotationMatrix2D(center, -angle)
+        matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
         img_list = [] 
         for img in imgs:
             rotated_img = cv2.warpAffine(img, matrix, (w, h))

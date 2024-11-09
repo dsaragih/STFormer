@@ -14,7 +14,7 @@ class GenerationGrayMeas:
         m_cr,m_h,m_w = mask.shape
         i_cr = len(imgs)
         i_h,i_w,c = imgs[0].shape
-        assert m_cr==i_cr and m_h==i_h and m_w==i_w, "Image size does not match mask size! "
+        assert m_cr==i_cr and m_h==i_h and m_w==i_w, f"Image size does not match mask size! {m_cr}!={i_cr} or {m_h}!={i_h} or {m_w}!={i_w}"
         meas = np.zeros_like(mask[0])
         for i,img in enumerate(imgs):
             Y = cv2.cvtColor(img,cv2.COLOR_BGR2YCrCb)[:,:,0]
