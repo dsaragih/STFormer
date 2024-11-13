@@ -1,5 +1,6 @@
 **/*/__pycache__
 work_dirs/
 train_dir/
+train_dir_4/
 *.out
 checkpoints/

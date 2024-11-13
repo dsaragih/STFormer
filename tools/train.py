@@ -32,10 +32,11 @@ def parse_args():
     parser.add_argument("--device",type=str,default="cuda")
     parser.add_argument("--distributed",type=bool,default=False)
     parser.add_argument("--resume",type=str,default=None)
-    parser.add_argument("--local_rank",default=-1)
+    parser.add_argument("--local_rank", "--local-rank", default=-1)
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    local_rank = int(args.local_rank) 
+    local_rank = int(os.environ["LOCAL_RANK"]) if args.distributed else -1
+    args.local_rank = local_rank
     if args.distributed:
         args.device = torch.device("cuda",local_rank)
     return args
@@ -70,6 +71,7 @@ def main():
     rank = 0 
     if args.distributed:
         local_rank = int(args.local_rank)
+        logger.info("local_rank: {}".format(local_rank))
         dist.init_process_group(backend="nccl")
         rank = dist.get_rank()
 
@@ -89,10 +91,10 @@ def main():
                 + dash_line + 
                 json.dumps(cfg, indent=4)+'\n'+
                 dash_line) 
-        logger.info('Model info:\n'
-                + dash_line + 
-                str(model)+'\n'+
-                dash_line)
+        # logger.info('Model info:\n'
+        #         + dash_line + 
+        #         str(model)+'\n'+
+        #         dash_line)
 
     mask,mask_s = generate_masks(cfg.train_data.mask_path,cfg.train_data.mask_shape)
     train_data = build_dataset(cfg.train_data,{"mask":mask})
@@ -137,7 +139,7 @@ def main():
             optim_state_dict = resume_dict["optim_state_dict"]
             optimizer.load_state_dict(optim_state_dict)
     if args.distributed:
-        model = DDP(model,device_ids=[local_rank],output_device=local_rank,find_unused_parameters=True)
+        model = DDP(model,device_ids=[local_rank],output_device=local_rank,find_unused_parameters=False)
     
     iter_num = len(train_data_loader) 
     for epoch in range(start_epoch,cfg.runner.max_epochs):
@@ -187,7 +189,7 @@ def main():
             else:
                 save_model = model
             checkpoint_dict = {
-                "epoch": epoch, 
+                "epoch": epoch+1, 
                 "model_state_dict": save_model.state_dict(), 
                 "optim_state_dict": optimizer.state_dict(), 
             }
@@ -206,5 +208,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

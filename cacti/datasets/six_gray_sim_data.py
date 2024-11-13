@@ -32,7 +32,8 @@ class SixGraySimData(Dataset):
         # 256 x 256 x 32
         pic = pic[0:self.height,0:self.width,:]
         # e.g. 2 x 16 x 256 x 256
-        assert pic.shape[2] // self.frames > 0
+        if pic.shape[0] // self.frames == 0:
+            return np.zeros([self.frames, self.height, self.width]), np.zeros([self.frames, self.height, self.width])
         pic_gt = np.zeros([pic.shape[2] // self.frames, self.frames, self.height, self.width])
         # print(f"Pic shape: {pic.shape}")
         # print(f"Pic_gt shape: {pic_gt.shape}")

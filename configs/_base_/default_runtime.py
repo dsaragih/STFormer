@@ -1,7 +1,7 @@
 checkpoint_config = dict(interval=1)
 
 log_config = dict(
-    interval=500,
+    interval=100,
 )
 save_image_config = dict(
     interval=2000,

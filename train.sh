@@ -10,5 +10,5 @@
 echo "Selected GPU ID(s): ${SLURM_STEP_GPUS:-$SLURM_JOB_GPUS}"
 
 
-srun python tools/train.py configs/STFormer/stformer_base.py \
-    --work_dir "./train_dir" \
+srun python configs/STFormer/stformer_base_4.py \
+    --work_dir "./train_dir_4"

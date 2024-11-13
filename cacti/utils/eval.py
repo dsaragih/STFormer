@@ -18,6 +18,10 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
         batch_output = []
 
         meas, gt = data
+
+        if torch.sum(gt) == 0:
+            continue
+
         gt = gt[0].numpy()
         
         meas = meas[0].float().to(args.device)

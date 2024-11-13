@@ -101,6 +101,11 @@ def main():
         psnr,ssim,lpips = 0.0,0.0,0.0
         batch_output = []
         meas, gt = data
+
+        # if gt all zeros, skip
+        if torch.sum(gt) == 0:
+            continue
+
         # Index batch dimension
         gt = gt[0].numpy()
         meas = meas[0].float().to(device)
