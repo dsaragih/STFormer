@@ -169,6 +169,7 @@ def main():
 
             loss.backward()
             optimizer.step()
+
             if rank==0 and (iteration % cfg.log_config.interval) == 0:
                 lr = optimizer.state_dict()["param_groups"][0]["lr"]
                 iter_len = len(str(iter_num))

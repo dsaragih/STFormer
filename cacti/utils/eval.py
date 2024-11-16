@@ -11,7 +11,7 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
     psnr_dict,ssim_dict = {},{}
     psnr_list,ssim_list = [],[]
     out_list,gt_list = [],[]
-    data_loader = DataLoader(test_data,1,shuffle=False,num_workers=4)
+    data_loader = DataLoader(test_data,1,shuffle=False,num_workers=1)
     cr = mask.shape[0]
     for iter,data in enumerate(data_loader):
         psnr,ssim = 0,0
@@ -19,10 +19,14 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
 
         meas, gt = data
 
-        if torch.sum(gt) == 0:
-            continue
 
         gt = gt[0].numpy()
+        if np.sum(gt)==0:
+            psnr_list.append(0)
+            ssim_list.append(0)
+            out_list.append(np.zeros([1,cr,gt.shape[1],gt.shape[2]]))
+            gt_list.append(gt)
+            continue
         
         meas = meas[0].float().to(args.device)
         batch_size = meas.shape[0]
