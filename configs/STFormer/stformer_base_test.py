@@ -1,6 +1,5 @@
 _base_=[
-        "../_base_/six_gray_sim_data.py",
-        "../_base_/davis.py",
+        "../_base_/davis_test.py",
         "../_base_/default_runtime.py"
         ]
 
@@ -18,7 +17,7 @@ train_pipeline = [
     dict(type='Resize', resize_h=resize_h,resize_w=resize_w),
 ]
 
-k = 2
+k = 8
 
 train_data = dict(
     mask_path = f"test_datasets/mask/{k}x{k}_mask.mat",

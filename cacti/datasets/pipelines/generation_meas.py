@@ -4,6 +4,24 @@ import einops
 from .builder import PIPELINES
 
 @PIPELINES.register_module
+class GenerationGray:
+    def __init__(self,norm=255):
+        self.norm=norm
+
+    def __call__(self, imgs, mask):
+        assert isinstance(imgs,list), "imgs must be list"
+        gt = []
+        m_cr,m_h,m_w = mask.shape
+        i_cr = len(imgs)
+        i_h,i_w,c = imgs[0].shape
+        assert m_cr==i_cr and m_h==i_h and m_w==i_w, f"Image size does not match mask size! {m_cr}!={i_cr} or {m_h}!={i_h} or {m_w}!={i_w}"
+        for i,img in enumerate(imgs):
+            Y = cv2.cvtColor(img,cv2.COLOR_BGR2YCrCb)[:,:,0]
+            Y = Y.astype(np.float32)/self.norm
+            gt.append(Y)
+        return np.array(gt)
+
+@PIPELINES.register_module
 class GenerationGrayMeas:
     def __init__(self,norm=255):
         self.norm=norm

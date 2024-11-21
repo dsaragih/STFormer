@@ -2,5 +2,7 @@
 work_dirs/
 train_dir/
 train_dir_4/
+train_dir_6/
 *.out
 checkpoints/
+work_eval/

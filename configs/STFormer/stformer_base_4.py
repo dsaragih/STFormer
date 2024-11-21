@@ -33,7 +33,8 @@ model = dict(
     type='STFormer',
     color_channels=1,
     units=4,
-    dim=64
+    dim=64,
+    frames=k*k
 )
 
 eval=dict(

@@ -1,6 +1,5 @@
 _base_=[
-        "../_base_/six_gray_sim_data.py",
-        "../_base_/davis.py",
+        "../_base_/davis_test.py",
         "../_base_/default_runtime.py"
         ]
 
@@ -18,7 +17,7 @@ train_pipeline = [
     dict(type='Resize', resize_h=resize_h,resize_w=resize_w),
 ]
 
-k = 8
+k = 6
 
 train_data = dict(
     mask_path = f"test_datasets/mask/{k}x{k}_mask.mat",
@@ -33,7 +32,8 @@ model = dict(
     type='STFormer',
     color_channels=1,
     units=4,
-    dim=64
+    dim=64,
+    frames=k*k
 )
 
 eval=dict(

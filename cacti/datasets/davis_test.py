@@ -7,32 +7,32 @@ from .builder import DATASETS
 from .pipelines.builder import build_pipeline
 
 @DATASETS.register_module 
-class DavisData(Dataset):
+class DavisTestData(Dataset):
     def __init__(self,data_root,*args,**kwargs):
 
         self.data_dir= data_root
         self.data_list = os.listdir(data_root)
         self.img_files = []
         self.mask = kwargs["mask"]
-        self.pipeline = Compose(kwargs["pipeline"])
         self.gene_meas = build_pipeline(kwargs["gene_meas"])
+        self.data_name_list = []
 
         self.ratio,self.resize_w,self.resize_h = self.mask.shape
         # Root for train.txt, val.txt: two directories up from data_root, then 
         # ImageSets/2017/val.txt or ImageSets/2017/train.txt
-        # split_root = osp.join(osp.dirname(osp.dirname(data_root)),"ImageSets/2017")
+        split_root = osp.join(osp.dirname(osp.dirname(data_root)),"ImageSets/2017")
 
-        # train_list = set()
+        val_list = set()
 
-        # # Read train.txt and val.txt to populate train_list and val_list
-        # with open(osp.join(split_root, "train.txt"), "r") as f:
-        #     train_list = set(line.strip() for line in f.readlines())
+        with open(osp.join(split_root, "val.txt"), "r") as f:
+            val_list = set(line.strip() for line in f.readlines())
 
         for image_dir in os.listdir(data_root):
             # Check here that image_dir belongs in train.txt or val.txt
-            # if image_dir not in train_list:
-            #     continue
+            if image_dir not in val_list:
+                continue
 
+            self.data_name_list.append(image_dir)
             train_data_path = osp.join(data_root,image_dir)
             data_path = os.listdir(train_data_path)
             data_path.sort()
@@ -59,9 +59,10 @@ class DavisData(Dataset):
         imgs = [] # video frames
         for i,image_path in enumerate(self.img_files[index]):
             img = cv2.imread(image_path)
+            # Readjust height and width to match mask
+            img = cv2.resize(img, (self.resize_w, self.resize_h))
             imgs.append(img)
-        imgs = self.pipeline(imgs)
-        gt,meas = self.gene_meas(imgs,self.mask)
-        return gt,meas
+        gt, meas = self.gene_meas(imgs,self.mask)
+        return meas, gt
     def __len__(self,):
         return len(self.img_files)

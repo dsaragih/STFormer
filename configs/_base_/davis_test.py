@@ -18,3 +18,9 @@ train_data = dict(
     mask_shape = None
 )
 
+test_data = dict(
+    type="GraySimDavis",
+    data_root="/scratch/ondemand28/dsaragih/datasets/TestDAVIS/TestImages",
+    mask_path="test_datasets/mask/mask.mat",
+    mask_shape=None,
+)

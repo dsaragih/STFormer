@@ -8,6 +8,8 @@ import numpy as np
 import einops 
 
 def eval_psnr_ssim(model,test_data,mask,mask_s,args):
+    # Use logger in args
+    logger = args.logger
     psnr_dict,ssim_dict = {},{}
     psnr_list,ssim_list = [],[]
     out_list,gt_list = [],[]
@@ -19,15 +21,17 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
 
         meas, gt = data
 
-
         gt = gt[0].numpy()
         if np.sum(gt)==0:
+            logger.info(f"GT is all zeros. Skipping...")
             psnr_list.append(0)
             ssim_list.append(0)
             out_list.append(np.zeros([1,cr,gt.shape[1],gt.shape[2]]))
             gt_list.append(gt)
             continue
         
+        # logger.info(f"Meas shape: {meas.shape}")
+        # logger.info(f"GT shape: {gt.shape}")
         meas = meas[0].float().to(args.device)
         batch_size = meas.shape[0]
          
@@ -66,7 +70,11 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
         os.makedirs(test_dir)
 
     for i,name in enumerate(test_data.data_name_list):
-        _name,_ = name.split("_")
+        # If name has an underscore, split by that. Otherwise, split by period.
+        if "_" in name:
+            _name,_ = name.split("_")
+        else:
+            _name,_ = name.split(".")
         psnr_dict[_name] = psnr_list[i]
         ssim_dict[_name] = ssim_list[i]
         out = out_list[i]

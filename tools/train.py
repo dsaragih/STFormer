@@ -142,12 +142,14 @@ def main():
         model = DDP(model,device_ids=[local_rank],output_device=local_rank,find_unused_parameters=False)
     
     iter_num = len(train_data_loader) 
+    # epoch = 0
     for epoch in range(start_epoch,cfg.runner.max_epochs):
         epoch_loss = 0
         model = model.train()
         start_time = time.time()
         for iteration, data in enumerate(train_data_loader):
             gt, meas = data
+
             gt = gt.float().to(args.device)
             meas = meas.unsqueeze(1).float().to(args.device)
             batch_size = meas.shape[0]
@@ -180,11 +182,14 @@ def main():
                 sing_gt = gt[0].cpu().numpy()
                 image_name = osp.join(train_image_save_dir,str(epoch)+"_"+str(iteration)+".png")
                 save_image(sing_out,sing_gt,image_name)
+
+            if iteration > 10:
+                break
         end_time = time.time()
         if rank==0:
             logger.info("epoch: {}, avg_loss: {:.5f}, time: {:.2f}s.\n".format(epoch,epoch_loss/(iteration+1),end_time-start_time))
 
-        if rank==0 and (epoch % cfg.checkpoint_config.interval) == 0:
+        if rank==0 and ((epoch % cfg.checkpoint_config.interval) == 0 or (epoch == cfg.runner.max_epochs-1)):
             if args.distributed:
                 save_model = model.module
             else:
@@ -197,6 +202,7 @@ def main():
             torch.save(checkpoint_dict,osp.join(checkpoints_dir,"epoch_"+str(epoch)+".pth")) 
 
         if rank==0 and cfg.eval.flag and epoch % cfg.eval.interval==0:
+            args.logger = logger
             if args.distributed:
                 psnr_dict,ssim_dict = eval_psnr_ssim(model.module,test_data,mask,mask_s,args)
             else:
