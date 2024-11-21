@@ -15,6 +15,7 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
     out_list,gt_list = [],[]
     data_loader = DataLoader(test_data,1,shuffle=False,num_workers=1)
     cr = mask.shape[0]
+    eval_name_list = []
     for iter,data in enumerate(data_loader):
         psnr,ssim = 0,0
         batch_output = []
@@ -23,12 +24,19 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
 
         gt = gt[0].numpy()
         if np.sum(gt)==0:
+            logger.info(f"Name: {test_data.data_name_list[iter]}")
             logger.info(f"GT is all zeros. Skipping...")
             psnr_list.append(0)
             ssim_list.append(0)
             out_list.append(np.zeros([1,cr,gt.shape[1],gt.shape[2]]))
             gt_list.append(gt)
             continue
+
+        if iter > 5:
+            # Limit the number of iterations for testing.
+            break
+
+        eval_name_list.append(test_data.data_name_list[iter])
         
         # logger.info(f"Meas shape: {meas.shape}")
         # logger.info(f"GT shape: {gt.shape}")
@@ -69,7 +77,7 @@ def eval_psnr_ssim(model,test_data,mask,mask_s,args):
     if not osp.exists(test_dir):
         os.makedirs(test_dir)
 
-    for i,name in enumerate(test_data.data_name_list):
+    for i,name in enumerate(eval_name_list):
         # If name has an underscore, split by that. Otherwise, split by period.
         if "_" in name:
             _name,_ = name.split("_")

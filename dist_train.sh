@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #SBATCH --partition=gpunodes        # Specify the GPU partition
-#SBATCH --mem=32G                    # Memory allocation
-#SBATCH --nodelist=hyas            # Node to use
+#SBATCH --mem=16G                    # Memory allocation
+#SBATCH --nodelist=calypso            # Node to use
 #SBATCH --gres=gpu:1  # Request one RTX 6000 Ada GPU
-#SBATCH --time=18:00:00
+#SBATCH --time=16:00:00
 
 
 # Print GPU info to verify allocation

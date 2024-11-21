@@ -36,6 +36,7 @@ def parse_args():
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
     local_rank = int(os.environ["LOCAL_RANK"]) if args.distributed else -1
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
     args.local_rank = local_rank
     if args.distributed:
         args.device = torch.device("cuda",local_rank)
@@ -143,7 +144,7 @@ def main():
     
     iter_num = len(train_data_loader) 
     # epoch = 0
-    for epoch in range(start_epoch,cfg.runner.max_epochs):
+    for epoch in range(start_epoch, cfg.runner.max_epochs):
         epoch_loss = 0
         model = model.train()
         start_time = time.time()
@@ -154,22 +155,46 @@ def main():
             meas = meas.unsqueeze(1).float().to(args.device)
             batch_size = meas.shape[0]
 
-            Phi = einops.repeat(mask,'cr h w->b cr h w',b=batch_size)
-            Phi_s = einops.repeat(mask_s,'h w->b 1 h w',b=batch_size)
+            Phi = einops.repeat(mask, 'cr h w -> b cr h w', b=batch_size)
+            Phi_s = einops.repeat(mask_s, 'h w -> b 1 h w', b=batch_size)
 
             Phi = torch.from_numpy(Phi).to(args.device)
             Phi_s = torch.from_numpy(Phi_s).to(args.device)
 
             optimizer.zero_grad()
 
-            model_out = model(meas,Phi,Phi_s)
+            # Micro-batching
+            micro_batch_size = batch_size  # Define the size of each micro-batch
+            num_micro_batches = (batch_size + micro_batch_size - 1) // micro_batch_size
 
-            if not isinstance(model_out,list):
-                model_out = [model_out]
-            loss = torch.sqrt(criterion(model_out[-1], gt))
-            epoch_loss += loss.item()
+            micro_batch_loss = 0
+            for i in range(num_micro_batches):
+                start_idx = i * micro_batch_size
+                end_idx = min((i + 1) * micro_batch_size, batch_size)
 
-            loss.backward()
+                # Slice the micro-batch
+                micro_gt = gt[start_idx:end_idx]
+                micro_meas = meas[start_idx:end_idx]
+                micro_Phi = Phi[start_idx:end_idx]
+                micro_Phi_s = Phi_s[start_idx:end_idx]
+
+                # Forward pass
+                model_out = model(micro_meas, micro_Phi, micro_Phi_s)
+
+                if not isinstance(model_out, list):
+                    model_out = [model_out]
+
+                # Compute loss for the micro-batch
+                loss = torch.sqrt(criterion(model_out[-1], micro_gt))
+                micro_batch_loss += loss.item()
+
+                # Backward pass
+                loss.backward()
+
+            # Accumulate loss
+            epoch_loss += micro_batch_loss
+
+            # Optimizer step after processing all micro-batches
             optimizer.step()
 
             if rank==0 and (iteration % cfg.log_config.interval) == 0:
@@ -183,8 +208,7 @@ def main():
                 image_name = osp.join(train_image_save_dir,str(epoch)+"_"+str(iteration)+".png")
                 save_image(sing_out,sing_gt,image_name)
 
-            if iteration > 10:
-                break
+
         end_time = time.time()
         if rank==0:
             logger.info("epoch: {}, avg_loss: {:.5f}, time: {:.2f}s.\n".format(epoch,epoch_loss/(iteration+1),end_time-start_time))
