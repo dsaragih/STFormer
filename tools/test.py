@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument("--weights",type=str)
     parser.add_argument("--device",type=str,default="cuda:0")
     args = parser.parse_args()
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
     if not torch.cuda.is_available():
         args.device="cpu"
     return args
@@ -60,7 +61,7 @@ def main():
             dash_line) 
     logger.info(f"Config:\n{cfg.test_data}\n")
     test_data = build_dataset(cfg.test_data,{"mask":mask})
-    data_loader = DataLoader(test_data,batch_size=1,shuffle=False)
+    data_loader = DataLoader(test_data,batch_size=1,shuffle=False,num_workers=4)
 
     model = build_model(cfg.model).to(device)
     logger.info("Load pre_train model...")
@@ -97,6 +98,7 @@ def main():
     sum_time=0.0
     time_count = 0
     lpips_fn = LPIPS(net='vgg').to(device)
+    save_images = True
     for data_iter,data in enumerate(data_loader):
         psnr,ssim,lpips = 0.0,0.0,0.0
         batch_output = []
@@ -105,6 +107,10 @@ def main():
         # if gt all zeros, skip
         if torch.sum(gt) == 0:
             continue
+
+        if data_iter > 3:
+            # break
+            save_images = False
 
         # Index batch dimension
         gt = gt[0].numpy()
@@ -117,6 +123,16 @@ def main():
             _name,_ = name.split(".")
         out_list = []
         gt_list = []
+
+        # for j in range(gt.shape[0]):
+        #     gt_dir = osp.join(test_dir,_name+"_gt")
+        #     if not osp.exists(gt_dir):
+        #         os.makedirs(gt_dir)
+
+        #     # Min, max
+        #     logger.info(f"GT min: {np.min(gt[j])}, GT max: {np.max(gt[j])}")
+        #     save_single_image(gt[j]*255,gt_dir,j,name=config_name)  
+
         for ii in range(batch_size):
             single_gt = gt[ii]
             single_meas = meas[ii].unsqueeze(0).unsqueeze(0)
@@ -181,12 +197,14 @@ def main():
         lpips_dict[_name] = lpips
 
         #save image
-        out = np.array(batch_output)
-        for j in range(out.shape[0]):
-            image_dir = osp.join(test_dir,_name)
-            if not osp.exists(image_dir):
-                os.makedirs(image_dir)
-            save_single_image(out[j],image_dir,j,name=config_name)
+        if save_images:
+            out = np.array(batch_output)
+            for j in range(out.shape[0]):
+                image_dir = osp.join(test_dir,_name)
+                if not osp.exists(image_dir):
+                    os.makedirs(image_dir)
+                save_single_image(out[j],image_dir,j,name=config_name)
+
     if time_count==0:
         time_count=1
     logger.info('Average Run Time:\n' 

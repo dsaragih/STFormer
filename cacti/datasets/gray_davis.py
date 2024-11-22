@@ -28,7 +28,7 @@ class GraySimDavis(Dataset):
             pic = pic['p2']
         elif "p3" in pic:
             pic = pic['p3']
-        pic = pic / 255
+        # pic = pic / 255
         # 256 x 256 x 32
         pic = pic[0:self.height,0:self.width,:]
         # print(f"Data name: {self.data_name_list[index]}")
