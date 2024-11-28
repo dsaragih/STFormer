@@ -17,7 +17,7 @@ train_pipeline = [
     dict(type='Resize', resize_h=resize_h,resize_w=resize_w),
 ]
 
-k = 6
+k = 8
 
 train_data = dict(
     mask_path = f"test_datasets/mask/{k}x{k}_mask.mat",
