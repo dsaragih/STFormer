@@ -35,9 +35,9 @@ def generate_masks(mask_path=None,mask_shape=None):
             h_b = np.random.randint(0,h-m_h+1)
             w_b = np.random.randint(0,w-m_w+1)
             mask = mask[h_b:h_b+m_h,w_b:w_b+m_w,:m_c]
-    print(f"post mask shape: {mask.shape}")
     mask = np.transpose(mask, [2, 0, 1])
     mask = mask.astype(np.float32)
+    print(f"post mask shape: {mask.shape}")
 
     mask_s = np.sum(mask, axis=0)
     mask_s[mask_s==0] = 1

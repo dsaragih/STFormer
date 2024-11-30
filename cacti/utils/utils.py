@@ -4,6 +4,7 @@ import cv2
 import os.path as osp
 import einops
 from cacti.utils.demosaic import demosaicing_CFA_Bayer_Menon2007 as demosaicing_bayer
+from scipy.interpolate import griddata
 
 def get_device_info():
     gpu_info_dict = {}
@@ -66,8 +67,49 @@ def save_single_image(images,image_dir,batch,name="",demosaic=False):
         if demosaic:
             single_image = demosaicing_bayer(single_image,pattern='BGGR')
         cv2.imwrite(osp.join(image_dir,name+"_"+str(begin_frame+i+1)+".png"),single_image)
+
+def interpolate_mosaic2vid(image, mask_matrix):
+    """
+    Parameters:
+    - image (numpy array): Input mosaic image of shape (H, W).
+    - mask_matrix (numpy array): Masking matrix of shape (K, H, W).
+
+    Returns:
+    - frames (numpy array): Frames of shape (K, H, W).
+    """
+
+    K, H, W = mask_matrix.shape
+    frames = np.zeros((K, H, W))
+
+    for k in range(K):
+        # Extract the channel where the mask is non-zero
+        channel = image * mask_matrix[k]
         
+        # Get the coordinates of non-zero values in the mask
+        x, y = np.where(mask_matrix[k] != 0)
+        values = channel[x, y]  # Non-zero values in the channel
         
+        # Generate a grid of all points (H, W)
+        grid_x, grid_y = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
+        
+        # Perform interpolation using griddata
+        interpolated = griddata((x, y), values, (grid_x, grid_y), method='cubic', fill_value=0)
+        
+        # Store the interpolated frame
+        frames[k] = interpolated
+
+    return frames
+        
+
+def print_mean_metrics(name, metrics_dict, logger):
+    dash_line = '-' * 80 + '\n'
+    metrics_list = [metrics_dict[key].item() for key in metrics_dict.keys()]
+    metrics_dict['mean'] = np.mean(metrics_list)
+
+    metrics_str = ", ".join([key+": "+"{:.4f}".format(metrics_dict[key]) for key in metrics_dict.keys()])
+
+    logger.info(f"Mean {name}: \n {dash_line} {metrics_str} \n {dash_line}")
+
 def A(x,Phi):
     temp = x*Phi
     y = torch.sum(temp,dim=1,keepdim=True)

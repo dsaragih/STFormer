@@ -10,7 +10,7 @@ import cv2
 from glob import glob
 
 from cacti.utils.mask import generate_masks
-from cacti.utils.utils import save_single_image,get_device_info,load_checkpoints
+from cacti.utils.utils import save_single_image,get_device_info,load_checkpoints, print_mean_metrics, interpolate_mosaic2vid
 from cacti.utils.config import Config
 from cacti.models.builder import build_model
 from cacti.datasets.builder import build_dataset 
@@ -108,16 +108,21 @@ def main():
     ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     lpips_fn = LearnedPerceptualImagePatchSimilarity(net_type='vgg', normalize=True).to(device)
 
+    psnr_li = PeakSignalNoiseRatio(data_range=1.0).to(device)
+    ssim_li = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+    lpips_li = LearnedPerceptualImagePatchSimilarity(net_type='vgg', normalize=True).to(device)
+
     save_images = True
     for data_iter,data in enumerate(data_loader):
         batch_output = []
+        li_output = []
         meas, gt = data
 
         # if gt all zeros, skip
         if torch.sum(gt) == 0:
             continue
 
-        if data_iter > 300:
+        if data_iter > 3:
             # break
             save_images = False
 
@@ -182,68 +187,94 @@ def main():
                     continue
             else:
                 batch_output.append(output)
+                lin = interpolate_mosaic2vid(meas[ii].detach().cpu().numpy(), mask)
+                li_output.append(lin)
 
-        first_gt = torch.tensor(gt[0]).to(device)
-        output_tensor = torch.tensor(batch_output[0]).to(device)
+        first_gt = torch.tensor(gt[0:1]).to(device)
+        first_lin = torch.tensor(np.array(li_output)).to(device)
+        output_tensor = torch.tensor(np.array(batch_output)).to(device)
+
+        # logger.info(f"Shape of output tensor: {output_tensor.shape}")
+        # logger.info(f"Shape of first_gt: {first_gt.shape}")
+        # logger.info(f"Shape of first_lin: {first_lin.shape}")
+
+        # (b x t x c x h x w) -> (bt x c x h x w)
+        output_tensor = output_tensor.view(-1, *output_tensor.shape[2:])
+        first_gt = first_gt.view(-1, *first_gt.shape[2:])
+        first_lin = first_lin.view(-1, *first_lin.shape[2:])
 
         # Add channel dim if missing (t x h x w -> t x 3 x h x w)
         # use cv2 to convert to 3 channel image
         if output_tensor.ndim == 3:
             output_tensor = torch.stack([output_tensor]*3, dim=1)
             first_gt = torch.stack([first_gt]*3, dim=1)
+            first_lin = torch.stack([first_lin]*3, dim=1)
 
         # Clamp to [0, 1]
         output_tensor = torch.clamp(output_tensor, 0.0, 1.0).float()
         first_gt = torch.clamp(first_gt, 0.0, 1.0).float()
+        first_lin = torch.clamp(first_lin, 0.0, 1.0).float()
         
         # Check shapes
-        assert first_gt.shape == output_tensor.shape, f"Shapes do not match: {first_gt.shape} vs {output_tensor.shape}"
+        assert first_gt.shape == output_tensor.shape == first_lin.shape, f"Shapes do not match: {first_gt.shape} vs {output_tensor.shape} vs {first_lin.shape}"
 
         # Metrics
         psnr.update(output_tensor, first_gt)
         ssim.update(output_tensor, first_gt)
         lpips_fn.update(output_tensor, first_gt)
 
+        psnr_li.update(first_lin, first_gt)
+        ssim_li.update(first_lin, first_gt)
+        lpips_li.update(first_lin, first_gt)
+
         #save image
         if save_images:
-            os.makedirs(test_dir, exist_ok=True)
+            os.makedirs(test_dir + "_lin", exist_ok=True)
             base_count = len(glob(os.path.join(test_dir, "*.gif")))
             video_path = os.path.join(test_dir, f"video_{base_count:02d}.gif")
 
-            vid = (
-                (einops.rearrange(output_tensor, "t c h w -> t h w c") * 255)
-                .cpu()
-                .numpy()
-                .astype(np.uint8)
-            )
-            # write video file
-            # logger.info(f"Writing video shape {vid.shape} to {video_path}")
-            frames = [Image.fromarray(frame) for frame in vid]
+            # vid = (
+            #     (einops.rearrange(output_tensor, "t c h w -> t h w c") * 255)
+            #     .cpu()
+            #     .numpy()
+            #     .astype(np.uint8)
+            # )
+            # # write video file
+            # # logger.info(f"Writing video shape {vid.shape} to {video_path}")
+            # frames = [Image.fromarray(frame) for frame in vid]
 
-            # Save as a GIF
-            frames[0].save(
-                video_path,
-                save_all=True,
-                append_images=frames[1:],  # Add subsequent frames
-                duration=200,  # Frame duration in milliseconds (e.g., 5 fps = 200 ms)
-                loop=0  # Infinite loop
-            )
+            # # Save as a GIF
+            # frames[0].save(
+            #     video_path,
+            #     save_all=True,
+            #     append_images=frames[1:],  # Add subsequent frames
+            #     duration=200,  # Frame duration in milliseconds (e.g., 5 fps = 200 ms)
+            #     loop=0  # Infinite loop
+            # )
 
             # write ground truth and sampled images
-            rows = np.sqrt(vid.shape[0]).astype(int)
-            gt_grid = torchvision.utils.make_grid(first_gt, nrow=rows)
-            gt_grid = gt_grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
-            gt_grid = gt_grid.cpu().numpy()
-            gt_grid = (gt_grid * 255).astype(np.uint8)
-            gt_filename = "gt_{:02d}.jpg".format(base_count)
-            cv2.imwrite(os.path.join(test_dir, gt_filename), gt_grid)
+            rows = np.sqrt(output_tensor.shape[0]).astype(int)
+            # gt_grid = torchvision.utils.make_grid(first_gt, nrow=rows)
+            # gt_grid = gt_grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            # gt_grid = gt_grid.cpu().numpy()
+            # gt_grid = (gt_grid * 255).astype(np.uint8)
+            # gt_filename = "gt_{:02d}.jpg".format(data_iter)
+            # cv2.imwrite(os.path.join(test_dir, gt_filename), gt_grid)
 
-            samples_grid = torchvision.utils.make_grid(output_tensor, nrow=rows)
-            samples_grid = samples_grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
-            samples_grid = samples_grid.cpu().numpy()
-            samples_grid = (samples_grid * 255).astype(np.uint8)
-            samples_filename = "sample_{:02d}.jpg".format(base_count)
-            cv2.imwrite(os.path.join(test_dir, samples_filename), samples_grid)
+            # samples_grid = torchvision.utils.make_grid(output_tensor, nrow=rows)
+            # samples_grid = samples_grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            # samples_grid = samples_grid.cpu().numpy()
+            # samples_grid = (samples_grid * 255).astype(np.uint8)
+            # samples_filename = "sample_{:02d}.jpg".format(data_iter)
+            # cv2.imwrite(os.path.join(test_dir, samples_filename), samples_grid)
+
+            # write linear interpolated images
+            lin_grid = torchvision.utils.make_grid(first_lin, nrow=rows)
+            lin_grid = lin_grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            lin_grid = lin_grid.cpu().numpy()
+            lin_grid = (lin_grid * 255).astype(np.uint8)
+            lin_filename = "lin_{:02d}.jpg".format(data_iter)
+            cv2.imwrite(os.path.join(test_dir + "_lin", lin_filename), lin_grid)
 
 
     if time_count==0:
@@ -256,6 +287,10 @@ def main():
     logger.info("PSNR: {:.3f}".format(psnr.compute()))
     logger.info("SSIM: {:.3f}".format(ssim.compute()))
     logger.info("LPIPS: {:.3f}".format(lpips_fn.compute()))
+
+    logger.info("PSNR (LI): {:.3f}".format(psnr_li.compute()))
+    logger.info("SSIM (LI): {:.3f}".format(ssim_li.compute()))
+    logger.info("LPIPS (LI): {:.3f}".format(lpips_li.compute()))
 
 if __name__=="__main__":
     main()

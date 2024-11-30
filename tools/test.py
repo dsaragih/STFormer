@@ -6,8 +6,7 @@ sys.path.append(BASE_DIR)
 import torch 
 from torch.utils.data import DataLoader
 from cacti.utils.mask import generate_masks
-from cacti.utils.utils import save_single_image,get_device_info,load_checkpoints
-from cacti.utils.metrics import compare_psnr,compare_ssim,compare_lpips
+from cacti.utils.utils import save_single_image,get_device_info,load_checkpoints, interpolate_mosaic2vid, print_mean_metrics
 from cacti.utils.config import Config
 from cacti.models.builder import build_model
 from cacti.datasets.builder import build_dataset 
@@ -17,7 +16,10 @@ import numpy as np
 import argparse 
 import time
 import einops 
-from lpips import LPIPS
+
+from torchmetrics.image import PeakSignalNoiseRatio
+from torchmetrics.image import StructuralSimilarityIndexMeasure
+from torchmetrics.image import LearnedPerceptualImagePatchSimilarity
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -30,6 +32,7 @@ def parse_args():
     if not torch.cuda.is_available():
         args.device="cpu"
     return args
+    
 
 def main():
     args = parse_args()
@@ -94,21 +97,30 @@ def main():
         A_Phi_s = einops.rearrange(Phi_s,"b cr (h_num h) (w_num w)->(b h_num w_num) cr h w",h=part_h,w=part_w)
         
     psnr_dict,ssim_dict,lpips_dict = {},{},{}
-    psnr_list,ssim_list,lpips_list = [],[],[]
+    psnr_li_dict,ssim_li_dict,lpips_li_dict = {},{},{}
+
+    # Metrics
+    psnr = PeakSignalNoiseRatio(data_range=1.0).to(device)
+    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+    lpips_fn = LearnedPerceptualImagePatchSimilarity(net_type='vgg', normalize=True).to(device)
+
+    psnr_li = PeakSignalNoiseRatio(data_range=1.0).to(device)
+    ssim_li = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+    lpips_li = LearnedPerceptualImagePatchSimilarity(net_type='vgg', normalize=True).to(device)
+
     sum_time=0.0
     time_count = 0
-    lpips_fn = LPIPS(net='vgg').to(device)
     save_images = True
     for data_iter,data in enumerate(data_loader):
-        psnr,ssim,lpips = 0.0,0.0,0.0
         batch_output = []
+        li_output = []
         meas, gt = data
 
         # if gt all zeros, skip
         if torch.sum(gt) == 0:
             continue
 
-        if data_iter > 3:
+        if data_iter > 30:
             # break
             save_images = False
 
@@ -124,16 +136,16 @@ def main():
         out_list = []
         gt_list = []
 
-        # for j in range(gt.shape[0]):
-        #     gt_dir = osp.join(test_dir,_name+"_gt")
-        #     if not osp.exists(gt_dir):
-        #         os.makedirs(gt_dir)
+        for j in range(gt.shape[0]):
+            gt_dir = osp.join(test_dir,_name+"_gt")
+            if not osp.exists(gt_dir):
+                os.makedirs(gt_dir)
 
-        #     # Min, max
-        #     logger.info(f"GT min: {np.min(gt[j])}, GT max: {np.max(gt[j])}")
-        #     save_single_image(gt[j]*255,gt_dir,j,name=config_name)  
+            # Min, max
+            logger.info(f"GT min: {np.min(gt[j])}, GT max: {np.max(gt[j])}")
+            save_single_image(gt[j],gt_dir,j,name=config_name)  
 
-        for ii in range(batch_size):
+        for ii in range(1):
             single_gt = gt[ii]
             single_meas = meas[ii].unsqueeze(0).unsqueeze(0)
             if "partition" in cfg.test_data.keys():
@@ -172,38 +184,62 @@ def main():
                     continue
             else:
                 batch_output.append(output)
-            for jj in range(cr):
-                if output.shape[0]==3:
-                    per_frame_out = output[:,jj]
-                    rgb2raw = test_data.rgb2raw
-                    per_frame_out = np.sum(per_frame_out*rgb2raw,axis=0)
-                else:
-                    per_frame_out = output[jj]
-                per_frame_gt = single_gt[jj].astype(np.float32)
-                psnr += compare_psnr(per_frame_gt*255,per_frame_out*255)
-                ssim += compare_ssim(per_frame_gt*255,per_frame_out*255)
-                lpips += compare_lpips(per_frame_gt*255,per_frame_out*255,lpips_fn, device)
-        meas_num = len(batch_output)
-        psnr = psnr / (meas_num* cr)
-        ssim = ssim / (meas_num* cr)
-        lpips = lpips / (meas_num* cr)
-        logger.info("{}, Mean PSNR: {:.4f} Mean SSIM: {:.4f} Mean LPIPS: {:.4f}.".format(_name,psnr,ssim,lpips))
-        psnr_list.append(psnr)
-        ssim_list.append(ssim)
-        lpips_list.append(lpips)
+                # Linear interpolation
+                lin = interpolate_mosaic2vid(meas[ii].detach().cpu().numpy(), mask)
+                li_output.append(lin)
 
-        psnr_dict[_name] = psnr
-        ssim_dict[_name] = ssim
-        lpips_dict[_name] = lpips
+        first_gt = torch.tensor(gt[0:1]).to(device)
+        first_lin = torch.tensor(li_output).to(device)
+        output_tensor = torch.tensor(batch_output).to(device)
+
+        # logger.info(f"Shape of output tensor: {output_tensor.shape}")
+        # logger.info(f"Shape of first_gt: {first_gt.shape}")
+        # logger.info(f"Shape of first_lin: {first_lin.shape}")
+
+        # (b x t x c x h x w) -> (bt x c x h x w)
+        output_tensor = output_tensor.view(-1, *output_tensor.shape[2:])
+        first_gt = first_gt.view(-1, *first_gt.shape[2:])
+        first_lin = first_lin.view(-1, *first_lin.shape[2:])
+
+        # Add channel dim if missing (t x h x w -> t x 3 x h x w)
+        # use cv2 to convert to 3 channel image
+        if output_tensor.ndim == 3:
+            output_tensor = torch.stack([output_tensor]*3, dim=1)
+            first_gt = torch.stack([first_gt]*3, dim=1)
+            first_lin = torch.stack([first_lin]*3, dim=1)
+
+        # Clamp to [0, 1]
+        output_tensor = torch.clamp(output_tensor, 0.0, 1.0).float()
+        first_gt = torch.clamp(first_gt, 0.0, 1.0).float()
+        first_lin = torch.clamp(first_lin, 0.0, 1.0).float()
+        
+        # Check shapes
+        assert first_gt.shape == output_tensor.shape == first_lin.shape, f"Shapes do not match: {first_gt.shape} vs {output_tensor.shape} vs {first_lin.shape}"
+        # Metrics
+        psnr_dict[_name] = psnr(output_tensor, first_gt)
+        ssim_dict[_name] = ssim(output_tensor, first_gt)
+        lpips_dict[_name] = lpips_fn(output_tensor, first_gt)
+
+        psnr_li_dict[_name] = psnr_li(first_lin, first_gt)
+        ssim_li_dict[_name] = ssim_li(first_lin, first_gt)
+        lpips_li_dict[_name] = lpips_li(first_lin, first_gt)
+
+        logger.info("{}, Mean PSNR: {:.4f} Mean SSIM: {:.4f} Mean LPIPS: {:.4f}.".format(_name,psnr_dict[_name],ssim_dict[_name],lpips_dict[_name]))
+        logger.info("{}, Linear Interpolation, Mean PSNR: {:.4f} Mean SSIM: {:.4f} Mean LPIPS: {:.4f}.".format(_name,psnr_li_dict[_name],ssim_li_dict[_name],lpips_li_dict[_name]))
 
         #save image
         if save_images:
             out = np.array(batch_output)
+            li_out = np.array(li_output)
             for j in range(out.shape[0]):
                 image_dir = osp.join(test_dir,_name)
+                li_image_dir = osp.join(test_dir,_name+"_li")
                 if not osp.exists(image_dir):
                     os.makedirs(image_dir)
+                if not osp.exists(li_image_dir):
+                    os.makedirs(li_image_dir)
                 save_single_image(out[j],image_dir,j,name=config_name)
+                save_single_image(li_out[j],li_image_dir,j,name=config_name)
 
     if time_count==0:
         time_count=1
@@ -212,26 +248,13 @@ def main():
             "{:.4f} s.".format(sum_time/time_count) + '\n' +
             dash_line)
     
-    psnr_dict["psnr_mean"] = np.mean(psnr_list)
-    ssim_dict["ssim_mean"] = np.mean(ssim_list)
-    lpips_dict["lpips_mean"] = np.mean(lpips_list)
-    
-    psnr_str = ", ".join([key+": "+"{:.4f}".format(psnr_dict[key]) for key in psnr_dict.keys()])
-    ssim_str = ", ".join([key+": "+"{:.4f}".format(ssim_dict[key]) for key in ssim_dict.keys()])
-    lpips_str = ", ".join([key+": "+"{:.4f}".format(lpips_dict[key]) for key in lpips_dict.keys()])
-    logger.info("Mean PSNR: \n"+
-                dash_line + 
-                "{}.\n".format(psnr_str)+
-                dash_line)
+    print_mean_metrics('PSNR', psnr_dict,logger)
+    print_mean_metrics('SSIM', ssim_dict,logger)
+    print_mean_metrics('LPIPS', lpips_dict,logger)
 
-    logger.info("Mean SSIM: \n"+
-                dash_line + 
-                "{}.\n".format(ssim_str)+
-                dash_line) 
-    logger.info("Mean LPIPS: \n"+
-                dash_line + 
-                "{}.\n".format(lpips_str)+
-                dash_line)
+    print_mean_metrics('PSNR LI', psnr_li_dict,logger)
+    print_mean_metrics('SSIM LI', ssim_li_dict,logger)
+    print_mean_metrics('LPIPS LI', lpips_li_dict,logger)
 
 if __name__=="__main__":
     main()
