@@ -145,7 +145,7 @@ def main():
             logger.info(f"GT min: {np.min(gt[j])}, GT max: {np.max(gt[j])}")
             save_single_image(gt[j],gt_dir,j,name=config_name)  
 
-        for ii in range(1):
+        for ii in range(batch_size):
             single_gt = gt[ii]
             single_meas = meas[ii].unsqueeze(0).unsqueeze(0)
             if "partition" in cfg.test_data.keys():
